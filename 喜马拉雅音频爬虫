@@ -1,0 +1,108 @@
+"突破喜马拉雅的 xm-sign 验证，爬取有声读物"
+
+from queue import Queue
+import threading
+import requests
+import hashlib
+import random
+import time
+import re
+import os
+
+
+class XimaLaya(object):
+    def __init__(self, page_url):
+        self.headers = {'User-Agent': 'Mozilla/5.0', 'Host': 'www.ximalaya.com'}
+        self.server_time_url = 'https://www.ximalaya.com/revision/time'
+        self.requests_url = 'https://www.ximalaya.com/revision/play/album'
+        self.page_url = page_url
+        self.queue = Queue()
+
+    def get_md5(self, str_time):
+        """
+        获取md5字段
+        """
+        return hashlib.md5('himalaya-{}'.format(str_time).encode()).hexdigest()
+
+    def xm_sign(self):
+        """
+        获取xm-sign
+        """
+        # 喜马拉雅服务器时间戳
+        server_time = requests.get(self.server_time_url, headers=self.headers).text
+        # 现在的时间戳
+        now_time = str(int(time.time()*1000))
+        # 100内随机数
+        random_num = '({})'.format(str(random.randrange(100)))
+        # 获取xm-sign
+        return self.get_md5(server_time) + random_num + server_time + random_num + now_time
+
+    def get_album_info(self):
+        """
+        获取专辑id、页码、专辑名称
+        """
+        html = requests.get(self.page_url, headers=self.headers, timeout=10).text
+        return (
+            re.findall(r'/(\d{4,})/', self.page_url)[0],
+            re.findall(r'min="1" max="(\d+)"', html)[0],
+            re.findall(r'<h1 class="title _leU">(.*?)</h1>', html)[0],
+        )
+
+    def crawler(self, albumId, page_num):
+        """
+        爬取音乐数据
+        """
+        try:
+            for n in range(1, int(page_num) + 1):
+                self.headers['xm-sign'] = self.xm_sign()
+                params = {'albumId': albumId, 'pageNum': str(n), 'sort': '0', 'pageSize': '30'}
+                r = requests.get(self.requests_url, params=params, headers=self.headers, timeout=8)
+                music_list = r.json()['data']['tracksAudioPlay']
+                for music in music_list:
+                    music_name = re.sub(r'[\/:*?"<>|]', "", music['trackName'])
+                    music_url = music['src'].replace('"', "")
+                    print('添加到队列：', (music_url, music_name))
+                    self.queue.put_nowait((music_url, music_name))
+        except:
+            pass
+
+    def download(self):
+        """
+        下载音乐
+        """
+        while not self.queue.empty():
+            try:
+                music_url, music_name = self.queue.get_nowait()
+                content = requests.get(music_url, timeout=20).content
+                with open(path + '/' + music_name + '.m4a', 'wb') as f:
+                    f.write(content)
+                    print('已下载：{}.m4a'.format(music_name))
+            except:
+                pass
+
+    def main(self):
+        album_id, page_num, album_name = self.get_album_info()
+        # 创建文件夹
+        album_name = re.sub(r'[\/:*?"<>|]', "", album_name)
+        global path
+        path = "ximalaya/{}/".format(album_name)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        # 单线程爬取数据
+        self.crawler(album_id, page_num)
+        # 多线程下载
+        t_l = []
+        for x in range(5):
+            t = threading.Thread(target=self.download)
+            t_l.append(t)
+            t.start()
+
+        for t in t_l:
+            t.join()
+
+
+if __name__ == '__main__':
+    # url = input('输入链接：')
+    url = 'https://www.ximalaya.com/youshengshu/5088879/'
+    xm = XimaLaya(url)
+    xm.main()
