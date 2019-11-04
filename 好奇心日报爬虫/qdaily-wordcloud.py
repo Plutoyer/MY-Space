@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Jun 13 20:24:05 2018
-
-@author: peter
-"""
 
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud, ImageColorGenerator
