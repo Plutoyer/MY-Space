@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jun  4 20:18:46 2018
 
-@author: peter
-"""
 import sqlite3
 import requests
 import time
